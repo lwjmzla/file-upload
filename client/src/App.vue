@@ -1,6 +1,6 @@
 <template>
 	<div class="app">
-
+		<el-button type="primary" @click="handleDownload">下载</el-button>
 		<input type="text">
 		<i class="el-icon-loading" style="color:#F56C6C;"></i>
 
@@ -62,10 +62,54 @@
 
 <script>
 import marked from 'marked'
+import axios from 'axios'
 import sparkMd5 from 'spark-md5'
 const CHUNK_SIZE = 1*1024*1024 // 1M
 const IMG_WIDTH_LIMIT = 1000
 const IMG_HEIGHT_LIMIT = 1000
+
+async function concurrencyDownload(path, size, chunkSize) {
+		let chunkNum = Math.ceil(size / chunkSize);
+
+		const downloadTask = [];
+		for(let i = 1; i <= chunkNum; i++) {
+				const rangeStart = chunkSize * (i - 1);
+				const rangeEnd = chunkSize * i - 1;
+
+				downloadTask.push(axios.get(path, {
+						headers: {
+								Range: `bytes=${rangeStart}-${rangeEnd}`,
+						},
+						responseType: 'blob'
+				}))
+		}
+		// const arrayBuffers = await Promise.all(downloadTask.map(task => {
+		// 		return task.then(res => res.data)
+		// }))
+		// console.log('arrayBuffers',arrayBuffers)
+		//return mergeArrayBuffer(arrayBuffers);
+		const blobArr = await Promise.all(downloadTask.map(task => {
+				return task.then(res => res.data)
+		}))
+		console.log('blobArr',blobArr)
+		return blobArr
+}
+
+function  mergeArrayBuffer(arrays) {
+		let totalLen = 0;
+		for (let arr of arrays) {
+				totalLen += arr.byteLength;
+		}
+		let res = new Uint8Array(totalLen)
+		let offset = 0
+		for (let arr of arrays) {
+				let uint8Arr = new Uint8Array(arr)
+				res.set(uint8Arr, offset)
+				offset += arr.byteLength
+		}
+		return res.buffer
+}
+
 export default {
 	name: "app",
 	data() {
@@ -74,11 +118,7 @@ export default {
 			file: null,
 			hash:null,
 			preview:null,
-			article:`# 蜗牛老湿开心的一天
-			* 吃饭
-			* 睡觉
-			* 上王者
-`,
+			article:`lwj`,
 			loading:false,
 			hashProgress:0
 		};
@@ -113,6 +153,24 @@ export default {
 		// this.bindPasteEvent()
 	},
 	methods: {
+		async handleDownload(){
+			const { data: len } = await axios.get('http://localhost:3000/length');
+			const res = await concurrencyDownload('http://localhost:3000', len, 300000);
+			console.log(res)
+
+			const blob = new Blob([...res]);
+			const url = window.URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			//a.download = 'guangguang.png';
+			a.download = 'yl-ui-vue2.rar';
+			document.body.appendChild(a);
+			a.click();
+			setTimeout(() => {
+				document.body.removeChild(a);
+				window.URL.revokeObjectURL(url);
+			}, 0);
+		},
 		bindPasteEvent(){
 			this.$refs.article.addEventListener('paste',async e=>{
 				const files = e.clipboardData.files
